@@ -16,6 +16,7 @@ A FastAPI backend that predicts sleep quality based on environmental factors inc
 sleep_tracker_ML/
 ├── main.py              # FastAPI application
 ├── requirements.txt     # Python dependencies
+├── example.py           # Example usage script
 ├── README.md           # This file
 └── .gitignore          # Git ignore rules
 ```
@@ -114,6 +115,18 @@ Poor conditions (low quality):
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{"temperature": 30, "humidity": 70, "light": 300, "sound": 85}'
+```
+
+### Using the Example Script:
+
+The repository includes an example script demonstrating all API features:
+
+```bash
+# Start the server
+python main.py
+
+# In another terminal, run the example script
+python example.py
 ```
 
 ### Using Python:
