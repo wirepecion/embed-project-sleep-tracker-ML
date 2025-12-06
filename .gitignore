@@ -5,3 +5,5 @@ venv/
 serviceAccountKey.json
 secrets/
 # models/*.joblib
+
+firebase.b64.txt

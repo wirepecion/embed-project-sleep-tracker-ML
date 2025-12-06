@@ -1,8 +1,8 @@
-name: Deploy to Railway (link → set var → deploy)
+name: Deploy to Railway
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
 
 jobs:
   deploy:
@@ -11,8 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node (Railway CLI)
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 18
 
@@ -22,28 +21,14 @@ jobs:
       - name: Login to Railway
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          npx railway login --token "${RAILWAY_TOKEN}"
+        run: railway login --token "$RAILWAY_TOKEN"
 
-      - name: Link Railway project (non-interactive)
+      - name: Deploy
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          # Link the CLI to your project so variables command uses correct context
-          npx railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --environment "${{ secrets.RAILWAY_ENVIRONMENT }}" || true
-
-      - name: Encode and set FIREBASE_CREDENTIALS_JSON_B64
-        env:
-          FIREBASE_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          echo "Encoding secret and setting on Railway..."
-          B64=$(printf "%s" "$FIREBASE_JSON" | base64 -w 0)
-          # Because CLI now is linked to project, variables --set works without --project flag
-          npx railway variables --set FIREBASE_CREDENTIALS_JSON_B64="$B64"
-
-      - name: Deploy with Railway
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          npx railway up --non-interactive --project "${{ secrets.RAILWAY_PROJECT_ID }}" --environment "${{ secrets.RAILWAY_ENVIRONMENT }}"
+          railway up \
+            --service sleep-tracker \
+            --environment ${{ secrets.RAILWAY_ENVIRONMENT }} \
+            --project ${{ secrets.RAILWAY_PROJECT_ID }} \
+            --detach
