@@ -8,7 +8,7 @@ logger = logging.getLogger("SleepService")
 # --- CONFIGURATION MATCHING YOUR SCREENSHOTS ---
 COLLECTION_SESSIONS = "sleep_sessions"
 COLLECTION_READINGS = "sensor_readings"
-COLLECTION_SCORES = "ml_scores"
+COLLECTION_SCORES = "interval_reports"
 
 # Your Schema Keys
 KEY_SESSION_STATUS = "type"      # You use 'type'
