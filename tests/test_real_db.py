@@ -45,10 +45,10 @@ def run_real_test():
 
         db.collection("sensor_readings").document(READING_ID).set({
             "session_id": SESSION_ID,
-            "temperature": 25.5,
-            "humidity": 60.0,
-            "light": 15.0,
-            "sound_level": 40.0,
+            "temperature": 21.9,
+            "humidity": 64.20,
+            "light": 10.0,
+            "sound_level": 48.0,
             "is_processed": False, 
             "timestamp": datetime.now(timezone.utc)
         })

@@ -58,3 +58,25 @@ async def background_poller():
 @app.get("/")
 def health_check():
     return {"status": "running", "mode": "production"}
+
+# Inside background_poller() loop:
+
+async def background_poller():
+    logger.info("Poller Started - Monitoring Active & Finished Sessions")
+    while True:
+        try:
+            # Task A: Predict for sleeping users
+            process_active_sessions()
+            
+            # Task B: Summarize for woke users
+            # (We run this new function now)
+            from app.services import process_finished_sessions
+            process_finished_sessions()
+            
+            await asyncio.sleep(30) 
+            
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Poller crashed: {e}")
+            await asyncio.sleep(10)

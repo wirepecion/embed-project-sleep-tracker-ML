@@ -1,9 +1,9 @@
 import numpy as np
 
 # ------------------ CONFIG ------------------
-TEMP_IDEAL = 20.0   # °C
-HUM_IDEAL = 50.0    # %RH
-NOISE_THRESHOLD = 30.0  # dB
+TEMP_IDEAL = 25.5   # °C
+HUM_IDEAL = 60.0    # %RH
+NOISE_THRESHOLD = 45.0  # dB
 SENSOR_LOWER_LIMIT = 0.5
 
 def light_penalty_from_lux(lux, sensor_lower_limit=None):
