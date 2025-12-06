@@ -1,0 +1,27 @@
+# Dockerfile - secure (do NOT bake serviceAccountKey.json into image)
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PORT=8080
+
+WORKDIR /app
+
+# system deps (kept minimal)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# copy only requirements first for caching
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
+
+# copy app
+COPY . /app
+
+# runtime env (you can override when deploying)
+ENV FIREBASE_CREDENTIALS_PATH=/secrets/serviceAccountKey.json
+EXPOSE 8080
+
+# start server
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
