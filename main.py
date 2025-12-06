@@ -17,8 +17,6 @@ API_KEY_REQUIRED = os.environ.get("API_KEY_REQUIRED", "false").lower() == "true"
 
 app = FastAPI(title="Sleep Tracker ML Service (Firestore-driven)")
 
-
-
 # Pydantic models
 class EnvWritten(BaseModel):
     session_id: str
