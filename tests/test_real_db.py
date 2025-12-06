@@ -33,14 +33,14 @@ def run_real_test():
     try:
         # 2. SETUP: Create Dummy Data
         print(f"📝 Creating Test Session: {SESSION_ID}")
-        db.("sleep_sessions").document(SESSION_ID).set({
+        db.collection("sleep_sessions").document(SESSION_ID).set({
             "status": "recording",  # <--- Triggers the query
             "started_at": datetime.now(timezone.utc),
             "user_id": "test_bot"
         })
 
         print(f"📝 Creating Test Reading: {READING_ID}")
-        db.("sensor_readings").document(READING_ID).set({
+        db.collection("sensor_readings").document(READING_ID).set({
             "session_id": SESSION_ID,
             "temperature": 25.5,
             "humidity": 60.0,
@@ -72,7 +72,7 @@ def run_real_test():
             print(f"❌ FAIL: Sensor Reading is_processed is {val}")
 
         # Check B: Score should exist
-        scores_ref = db.collection("interval_reports").where("session_id", "==", SESSION_ID).stream()
+        scores_ref = db.collection("ml_scores").where("session_id", "==", SESSION_ID).stream()
         scores = list(scores_ref)
         
         if len(scores) > 0:
@@ -94,9 +94,9 @@ def run_real_test():
     #             db.("sleep_sessions").document(SESSION_ID).delete()
     #             db.("sensor_readings").document(READING_ID).delete()
                 
-    #             scores_ref = db.("interval_reports").where("session_id", "==", SESSION_ID).stream()
+    #             scores_ref = db.("ml_scores").where("session_id", "==", SESSION_ID).stream()
     #             for doc in scores_ref:
-    #                 db.("interval_reports").document(doc.id).delete()
+    #                 db.("ml_scores").document(doc.id).delete()
                     
     #             print("✅ Cleanup complete. No trace left behind.")
     #         except Exception as e:
