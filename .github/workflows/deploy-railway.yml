@@ -24,14 +24,19 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
-      - name: Set FIREBASE_CREDENTIALS_JSON
+      - name: Set FIREBASE_CREDENTIALS_JSON_B64 (base64)
         run: |
+          echo "Encoding FIREBASE_CREDENTIALS_JSON and sending to Railway..."
+          # create a base64 one-line string from the secret
+          B64=$(printf "%s" "${{ secrets.FIREBASE_CREDENTIALS_JSON }}" | base64 -w 0)
+          echo "Setting FIREBASE_CREDENTIALS_JSON_B64 in Railway..."
           npx railway variables \
-            --set FIREBASE_CREDENTIALS_JSON="${{ secrets.FIREBASE_CREDENTIALS_JSON }}" \
+            --set FIREBASE_CREDENTIALS_JSON_B64="$B64" \
             --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
             --environment "${{ secrets.RAILWAY_ENVIRONMENT }}"
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
 
       - name: Deploy with Railway
         run: |
