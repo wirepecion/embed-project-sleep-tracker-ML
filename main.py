@@ -1,223 +1,206 @@
-"""
-Sleep Quality Prediction API
-A FastAPI backend that predicts sleep quality based on environmental factors.
-"""
-
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
-from typing import Optional
-import firebase_admin
-from firebase_admin import credentials, firestore
-from datetime import datetime, timezone
+# main.py
 import os
+import asyncio
+from typing import Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Header
+from pydantic import BaseModel
+from utils_time import parse_to_utc_iso
+from firebase_client import init_firebase
+from model_service import hybrid_predict, ResidualModel
+from firebase_admin import firestore
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="Sleep Quality Prediction API",
-    description="Predicts sleep quality based on environmental factors",
-    version="1.0.0"
-)
+# config
+ENABLE_POLLER = os.environ.get("ENABLE_FIRESTORE_POLLER", "true").lower() == "true"
+POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL_SECONDS", "30"))
+ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "admin-secret")
+API_KEY_REQUIRED = os.environ.get("API_KEY_REQUIRED", "false").lower() == "true"
 
-# Initialize Firebase Admin SDK
-try:
-    # Check if Firebase is already initialized
-    firebase_admin.get_app()
-except ValueError:
-    # Initialize Firebase only if not already initialized
-    # In production, use a service account key file
-    # For now, we'll handle the case where credentials might not be available
-    cred_path = os.environ.get('FIREBASE_CREDENTIALS_PATH', 'serviceAccountKey.json')
-    if os.path.exists(cred_path):
-        cred = credentials.Certificate(cred_path)
-        firebase_admin.initialize_app(cred)
-        db = firestore.client()
-    else:
-        # If no credentials file, Firebase logging will be skipped
-        db = None
-        print("Warning: Firebase credentials not found. Logging will be skipped.")
+app = FastAPI(title="Sleep Tracker ML Service (Firestore-driven)")
 
+# Pydantic models
+class EnvWritten(BaseModel):
+    session_id: str
+    timestamp: str
+    client_ingest_id: Optional[str] = None
 
-class PredictionInput(BaseModel):
-    """Input model for sleep quality prediction"""
-    temperature: float = Field(..., description="Temperature in Celsius", ge=-50, le=60)
-    humidity: float = Field(..., description="Humidity percentage", ge=0, le=100)
-    light: float = Field(..., description="Light level in lux", ge=0)
-    sound: float = Field(..., description="Sound level in decibels", ge=0, le=200)
+class SessionRequest(BaseModel):
+    session_id: str
 
+# init placeholders
+db = None
 
-class PredictionOutput(BaseModel):
-    """Output model for sleep quality prediction"""
-    sleep_quality_percent: float = Field(..., description="Predicted sleep quality percentage")
-    reasoning: str = Field(..., description="Explanation of the prediction")
+# auth helper
+def check_api_key(x_api_key: Optional[str]):
+    if API_KEY_REQUIRED and not x_api_key:
+        raise HTTPException(status_code=401, detail="X-API-Key required")
 
+# helper doc refs
+def env_doc_ref(session_id: str, iso_ts: str):
+    return db.collection("sessions").document(session_id).collection("environment").document(iso_ts)
 
-def calculate_sleep_quality(temperature: float, humidity: float, light: float, sound: float) -> tuple[float, str]:
-    """
-    Rule-based model to predict sleep quality.
-    This is a placeholder for future ML model.
-    
-    Optimal conditions for sleep:
-    - Temperature: 15-22°C (60-72°F)
-    - Humidity: 30-50%
-    - Light: 0-10 lux (dark room)
-    - Sound: 0-40 dB (quiet)
-    
-    Returns:
-        tuple: (sleep_quality_percent, reasoning)
-    """
-    score = 100.0
-    reasons = []
-    
-    # Temperature scoring
-    if 15 <= temperature <= 22:
-        temp_score = 0
-        reasons.append("Temperature is optimal")
-    elif 12 <= temperature < 15 or 22 < temperature <= 25:
-        temp_score = 15
-        reasons.append("Temperature is slightly suboptimal")
-    else:
-        temp_score = 30
-        if temperature < 12:
-            reasons.append("Temperature is too cold")
-        else:
-            reasons.append("Temperature is too warm")
-    
-    # Humidity scoring
-    if 30 <= humidity <= 50:
-        humidity_score = 0
-        reasons.append("Humidity is optimal")
-    elif 20 <= humidity < 30 or 50 < humidity <= 60:
-        humidity_score = 15
-        reasons.append("Humidity is slightly suboptimal")
-    else:
-        humidity_score = 25
-        if humidity < 20:
-            reasons.append("Humidity is too low")
-        else:
-            reasons.append("Humidity is too high")
-    
-    # Light scoring
-    if light <= 10:
-        light_score = 0
-        reasons.append("Light level is optimal (dark)")
-    elif 10 < light <= 50:
-        light_score = 15
-        reasons.append("Light level is slightly elevated")
-    elif 50 < light <= 200:
-        light_score = 25
-        reasons.append("Light level is too high")
-    else:
-        light_score = 35
-        reasons.append("Light level is way too high")
-    
-    # Sound scoring
-    if sound <= 40:
-        sound_score = 0
-        reasons.append("Sound level is optimal (quiet)")
-    elif 40 < sound <= 60:
-        sound_score = 15
-        reasons.append("Sound level is slightly elevated")
-    elif 60 < sound <= 80:
-        sound_score = 25
-        reasons.append("Sound level is too high")
-    else:
-        sound_score = 35
-        reasons.append("Sound level is way too high")
-    
-    # Calculate final score
-    score = max(0, score - temp_score - humidity_score - light_score - sound_score)
-    
-    # Create reasoning string
-    reasoning = ". ".join(reasons) + "."
-    
-    return round(score, 2), reasoning
+def ml_doc_ref(session_id: str, iso_ts: str):
+    return db.collection("sessions").document(session_id).collection("ml_scores").document(iso_ts)
 
+# core processing: read env doc -> predict -> write ml doc
+def process_env_doc(session_id: str, timestamp_raw: str) -> Dict[str, Any]:
+    iso_ts = parse_to_utc_iso(timestamp_raw)
+    env_ref = env_doc_ref(session_id, iso_ts)
+    env_snap = env_ref.get()
+    if not env_snap.exists:
+        raise HTTPException(status_code=404, detail=f"environment doc not found for {session_id}@{iso_ts}")
+    env = env_snap.to_dict()
 
-def log_to_firestore(input_data: dict, output_data: dict):
-    """
-    Log prediction input and output to Firebase Firestore
-    
-    Args:
-        input_data: Dictionary containing input parameters
-        output_data: Dictionary containing prediction results
-    """
+    # fields (impute None allowed)
+    temp = env.get("temp_c")
+    hum = env.get("humidity_pct")
+    light = env.get("light_lux")
+    noise = env.get("noise_db")
+    client_ingest_id = env.get("client_ingest_id")
+
+    # idempotency: if ml doc exists, return it
+    ml_ref = ml_doc_ref(session_id, iso_ts)
+    if ml_ref.get().exists:
+        snap = ml_ref.get()
+        return {"status": "already_processed", **snap.to_dict()}
+
+    out = hybrid_predict(temp, hum, noise, light)
+
+    ml_payload = {
+        "timestamp": iso_ts,
+        "temp_c": temp,
+        "humidity_pct": hum,
+        "light_lux": light,
+        "noise_db": noise,
+        "interval_score": out["interval_score"],
+        "rule_score": out["rule_score"],
+        "residual": out["residual"],
+        "model_version": out["model_version"],
+        "confidence": out["confidence"],
+        "client_ingest_id": client_ingest_id,
+        "prediction_type": "realtime",
+        "created_at": firestore.SERVER_TIMESTAMP
+    }
+
+    ml_ref.set(ml_payload)
+    return {"status": "processed", "firebase_path": f"sessions/{session_id}/ml_scores/{iso_ts}", **ml_payload}
+
+# endpoint called by backend after env doc is written
+@app.post("/v1/process/env_doc")
+async def process_env_doc_endpoint(payload: EnvWritten, x_api_key: Optional[str] = Header(None)):
+    check_api_key(x_api_key)
+    global db
+    db = init_firebase()
+    try:
+        res = process_env_doc(payload.session_id, payload.timestamp)
+        return res
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# test endpoint
+@app.get("/test-firestore")
+async def test_firestore():
+    global db
+    db = init_firebase()
     if db is None:
-        print("Firebase not initialized. Skipping logging.")
+        return {"status": "error", "message": "Firestore not initialized"}
+    ref = db.collection("test_collection").document("connectivity_test")
+    ref.set({"message": "hello", "created_at": firestore.SERVER_TIMESTAMP})
+    doc = ref.get()
+    if doc.exists:
+        return {"status": "success", "doc": doc.to_dict()}
+    return {"status": "error", "message": "write failed"}
+
+# session summary endpoint (reads ml_scores and writes summary)
+@app.post("/v1/score/session-summary")
+async def session_summary(req: SessionRequest, x_api_key: Optional[str] = Header(None)):
+    check_api_key(x_api_key)
+    global db
+    db = init_firebase()
+    session_id = req.session_id
+    ml_coll = db.collection("sessions").document(session_id).collection("ml_scores")
+    docs = list(ml_coll.stream())
+    if not docs:
+        raise HTTPException(status_code=404, detail="No ml_scores for session")
+    scores = []
+    temps = []
+    hums = []
+    lights = []
+    noises = []
+    timestamps = []
+    for d in docs:
+        dd = d.to_dict()
+        if "interval_score" in dd:
+            scores.append(dd["interval_score"])
+            temps.append(dd.get("temp_c"))
+            hums.append(dd.get("humidity_pct"))
+            lights.append(dd.get("light_lux"))
+            noises.append(dd.get("noise_db"))
+            timestamps.append(dd.get("timestamp"))
+    import numpy as np
+    summary = {
+        "session_id": session_id,
+        "avg_comfort_score": float(np.mean(scores)),
+        "min_score": float(np.min(scores)),
+        "max_score": float(np.max(scores)),
+        "first_timestamp": min(timestamps),
+        "last_timestamp": max(timestamps),
+        "model_version": None,  # could set from ResidualModel
+        "comfort_trend": "increasing" if scores[-1] > scores[0] else ("decreasing" if scores[-1] < scores[0] else "stable"),
+        "stats": {
+            "temp_mean": float(np.nanmean([x for x in temps if x is not None])) if any(temps) else None,
+            "temp_std": float(np.nanstd([x for x in temps if x is not None])) if any(temps) else None,
+            "humidity_mean": float(np.nanmean([x for x in hums if x is not None])) if any(hums) else None,
+            "humidity_std": float(np.nanstd([x for x in hums if x is not None])) if any(hums) else None,
+            "light_mean": float(np.nanmean([x for x in lights if x is not None])) if any(lights) else None,
+            "light_std": float(np.nanstd([x for x in lights if x is not None])) if any(lights) else None,
+            "noise_mean": float(np.nanmean([x for x in noises if x is not None])) if any(noises) else None,
+            "noise_std": float(np.nanstd([x for x in noises if x is not None])) if any(noises) else None
+        },
+        "num_intervals": len(scores)
+    }
+    # write summary
+    doc_ref = db.collection("sessions").document(session_id).collection("meta").document("summary")
+    doc_ref.set({**summary, "created_at": firestore.SERVER_TIMESTAMP})
+    return {"written": True, "firebase_path": f"sessions/{session_id}/meta/summary", **summary}
+
+# background poller that finds env docs without ml_scores and processes them
+async def poller_task():
+    global db
+    if db is None:
+        print("Poller disabled: Firestore not initialized.")
         return
-    
-    try:
-        # Create a document in the 'predictions' collection
-        doc_ref = db.collection('predictions').document()
-        doc_ref.set({
-            'input': input_data,
-            'output': output_data,
-            'timestamp': firestore.SERVER_TIMESTAMP
-        })
-        print(f"Logged prediction to Firestore with ID: {doc_ref.id}")
-    except Exception as e:
-        print(f"Error logging to Firestore: {e}")
+    print("Poller started.")
+    while True:
+        try:
+            sessions = db.collection("sessions").list_documents()
+            for sref in sessions:
+                sid = sref.id
+                env_coll = sref.collection("environment")
+                docs = env_coll.limit(500).stream()
+                for d in docs:
+                    iso_ts = d.id
+                    # check ml exists
+                    mlref = sref.collection("ml_scores").document(iso_ts)
+                    if mlref.get().exists:
+                        continue
+                    try:
+                        process_env_doc(sid, iso_ts)
+                        env_coll.document(iso_ts).update({"_ml_processed_at": firestore.SERVER_TIMESTAMP})
+                    except Exception as e:
+                        print("Poller error for", sid, iso_ts, e)
+            await asyncio.sleep(POLL_INTERVAL)
+        except Exception as e:
+            print("Poller inner loop error:", e)
+            await asyncio.sleep(POLL_INTERVAL)
 
-
-@app.get("/")
-async def root():
-    """Root endpoint"""
-    return {
-        "message": "Sleep Quality Prediction API",
-        "version": "1.0.0",
-        "endpoints": {
-            "/predict": "POST - Predict sleep quality from environmental factors",
-            "/docs": "GET - Interactive API documentation"
-        }
-    }
-
-
-@app.post("/predict", response_model=PredictionOutput)
-async def predict_sleep_quality(input_data: PredictionInput):
-    """
-    Predict sleep quality based on environmental factors.
-    
-    Args:
-        input_data: Environmental factors (temperature, humidity, light, sound)
-    
-    Returns:
-        PredictionOutput: Sleep quality percentage and reasoning
-    """
-    try:
-        # Calculate sleep quality
-        sleep_quality_percent, reasoning = calculate_sleep_quality(
-            temperature=input_data.temperature,
-            humidity=input_data.humidity,
-            light=input_data.light,
-            sound=input_data.sound
-        )
-        
-        # Prepare output
-        output = {
-            "sleep_quality_percent": sleep_quality_percent,
-            "reasoning": reasoning
-        }
-        
-        # Log to Firestore
-        input_dict = input_data.model_dump()
-        log_to_firestore(input_dict, output)
-        
-        return PredictionOutput(**output)
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
-
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    firebase_status = "connected" if db is not None else "not configured"
-    return {
-        "status": "healthy",
-        "firebase": firebase_status,
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.on_event("startup")
+async def startup_event():
+    global db
+    db = init_firebase()
+    # start poller if enabled
+    if ENABLE_POLLER and db is not None:
+        asyncio.create_task(poller_task())
+    else:
+        print("Poller disabled or Firestore not configured.")
