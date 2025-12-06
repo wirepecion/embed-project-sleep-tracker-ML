@@ -16,7 +16,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Install Node (Railway CLI needs node)
+      - name: Install Node
         uses: actions/setup-node@v4
         with:
           node-version: 18
@@ -24,14 +24,19 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
-      - name: Set FIREBASE_CREDENTIALS_JSON in Railway
+      - name: Set FIREBASE_CREDENTIALS_JSON
         run: |
-          npx railway variables set FIREBASE_CREDENTIALS_JSON "${{ secrets.FIREBASE_CREDENTIALS_JSON }}" --project ${{ secrets.RAILWAY_PROJECT_ID }} --environment ${{ secrets.RAILWAY_ENVIRONMENT }}
+          npx railway variables \
+            --set FIREBASE_CREDENTIALS_JSON="${{ secrets.FIREBASE_CREDENTIALS_JSON }}" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+            --environment "${{ secrets.RAILWAY_ENVIRONMENT }}"
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
       - name: Deploy with Railway
         run: |
-          npx railway up --non-interactive --project ${{ secrets.RAILWAY_PROJECT_ID }} --environment ${{ secrets.RAILWAY_ENVIRONMENT }}
+          npx railway up --non-interactive \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+            --environment "${{ secrets.RAILWAY_ENVIRONMENT }}"
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
