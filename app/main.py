@@ -5,6 +5,7 @@ from app.firebase_client import init_firebase
 
 app = FastAPI()
 
+# init model and firebase
 model = load_model()
 firebase_app = init_firebase()
 
