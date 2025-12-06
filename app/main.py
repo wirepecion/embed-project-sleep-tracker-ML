@@ -16,10 +16,10 @@ logger = logging.getLogger("Main")
 async def lifespan(app: FastAPI):
     # --- STARTUP ---
     logger.info("Initializing System...")
-    init_firebase()         # Connect DB
-    load_model_into_memory() # Load Model ONCE
+    init_firebase()          # 1. Connect to Firestore
+    load_model_into_memory() # 2. Load ML Model into RAM (Critical!)
     
-    # Start Background Poller
+    # 3. Start the Background Loop
     task = asyncio.create_task(background_poller())
     
     yield
@@ -36,22 +36,22 @@ app = FastAPI(lifespan=lifespan)
 
 async def background_poller():
     """
-    Robust loop that won't die on error.
+    Robust infinite loop. It never dies, even if Firebase errors out.
     """
-    logger.info("Poller Started")
+    logger.info("Poller Started - Monitoring Active Sessions")
     while True:
         try:
-            # Run the business logic
+            # The Brain: Checks DB, Predicts, Writes Scores
             process_active_sessions()
             
-            # Wait for 30 seconds before checking again
+            # Wait 30 seconds before next check
             await asyncio.sleep(30) 
             
         except asyncio.CancelledError:
             logger.info("Poller stopping request received.")
             break
         except Exception as e:
-            # CRITICAL: Catch generic errors so the loop doesn't die
+            # CRITICAL: If a crash happens, log it and restart loop in 10s
             logger.error(f"Poller crashed (restarting in 10s): {e}")
             await asyncio.sleep(10)
 
