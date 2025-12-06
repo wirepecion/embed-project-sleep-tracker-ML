@@ -2,105 +2,99 @@ import os
 import sys
 import time
 import uuid
+import warnings
 from datetime import datetime, timezone
+from google.cloud.firestore import FieldFilter
 
-# Add project root to path so we can import 'app'
+# 1. CLEANUP: Suppress the specific Google warning if it persists
+warnings.filterwarnings("ignore")
+
 sys.path.append(os.getcwd())
 
-# FIX: Do not import 'db' directly. It causes the NoneType error.
 from app.firebase_client import init_firebase
 from app.services import process_active_sessions
+# 2. FIX: Import the loader so we can prep the model
+from app.model_loader import load_model_into_memory 
 
-# --- CONFIGURATION ---
 TEST_ID = str(uuid.uuid4())[:8]
 SESSION_ID = f"INTEGRATION_TEST_SESSION_{TEST_ID}"
 READING_ID = f"INTEGRATION_TEST_READING_{TEST_ID}"
+TARGET_COLLECTION = "interval_reports"
 
 def run_real_test():
-    print(f"🚀 STARTING REAL FIREBASE TEST (ID: {TEST_ID})")
+    print(f"🚀 STARTING CLEAN TEST (ID: {TEST_ID})")
     print("------------------------------------------------")
 
-    # 1. Initialize Connection & CAPTURE the client
-    # We catch the return value here to ensure we have the live object
+    # 3. FIX: Load Model FIRST (Silences 'Attempted prediction with unloaded model')
+    load_model_into_memory()
+
     db = init_firebase()
-    
     if db is None:
-        print("❌ CRITICAL: Could not connect to Firebase. Check Env Vars.")
+        print("❌ CRITICAL: No DB Connection.")
         return
 
-    print("✅ Firebase Connected.")
+    print("✅ Firebase & Model Ready.")
 
     try:
-        # 2. SETUP: Create Dummy Data
-        print(f"📝 Creating Test Session: {SESSION_ID}")
+        # SETUP
         db.collection("sleep_sessions").document(SESSION_ID).set({
-            "status": "recording",  # <--- Triggers the query
+            "type": "START",
             "started_at": datetime.now(timezone.utc),
             "user_id": "test_bot"
         })
 
-        print(f"📝 Creating Test Reading: {READING_ID}")
         db.collection("sensor_readings").document(READING_ID).set({
             "session_id": SESSION_ID,
             "temperature": 25.5,
             "humidity": 60.0,
             "light": 15.0,
             "sound_level": 40.0,
-            "is_processed": False, # <--- Triggers the processing
+            "is_processed": False, 
             "timestamp": datetime.now(timezone.utc)
         })
 
-        # 3. ACT: Run the actual Service Logic
-        print("⚙️ Running process_active_sessions() ...")
-        
-        # This function internally uses the global db, which WAS updated by init_firebase()
-        # So inside the app logic, it will work fine.
+        # ACT
+        print("⚙️ Running Service...")
         process_active_sessions()
         
-        print("✅ Service function finished.")
+        # VERIFY
+        print("🔍 Verifying...")
+        time.sleep(2) 
 
-        # 4. VERIFY: Did it happen?
-        print("🔍 Verifying results in Database...")
-        time.sleep(2) # Give Firestore a moment (eventual consistency)
-
-        # Check A: Reading should be marked processed
         reading_doc = db.collection("sensor_readings").document(READING_ID).get()
         if reading_doc.exists and reading_doc.get("is_processed") is True:
-            print("✅ PASS: Sensor Reading marked as 'is_processed=True'")
+            print("✅ PASS: Reading processed.")
         else:
-            val = reading_doc.get("is_processed") if reading_doc.exists else "DOC_MISSING"
-            print(f"❌ FAIL: Sensor Reading is_processed is {val}")
+            print("❌ FAIL: Reading NOT processed.")
 
-        # Check B: Score should exist
-        scores_ref = db.collection("interval_reports").where("session_id", "==", SESSION_ID).stream()
+        scores_ref = db.collection(TARGET_COLLECTION)\
+            .where(filter=FieldFilter("session_id", "==", SESSION_ID))\
+            .stream()
+            
         scores = list(scores_ref)
-        
         if len(scores) > 0:
-            score_data = scores[0].to_dict()
-            print(f"✅ PASS: ML Score found! Value: {score_data.get('score')}")
-            print(f"   Document ID: {scores[0].id}")
+            print(f"✅ PASS: Report Created. Score: {scores[0].to_dict().get('score')}")
         else:
-            print("❌ FAIL: No ML Score document was created.")
+            print(f"❌ FAIL: No Report found.")
 
     except Exception as e:
-        print(f"❌ ERROR: Test crashed: {e}")
+        print(f"❌ ERROR: {e}")
 
-    # finally:
-    #     # 5. TEARDOWN: Clean up the mess
-    #     print("------------------------------------------------")
-    #     print("🧹 Cleaning up test data...")
-    #     if db:
-    #         try:
-    #             db.("sleep_sessions").document(SESSION_ID).delete()
-    #             db.("sensor_readings").document(READING_ID).delete()
-                
-    #             scores_ref = db.("interval_reports").where("session_id", "==", SESSION_ID).stream()
-    #             for doc in scores_ref:
-    #                 db.("interval_reports").document(doc.id).delete()
-                    
-    #             print("✅ Cleanup complete. No trace left behind.")
-    #         except Exception as e:
-    #             print(f"⚠️ Cleanup failed: {e}")
+    finally:
+        # TEARDOWN
+        if db:
+            try:
+                db.collection("sleep_sessions").document(SESSION_ID).delete()
+                db.collection("sensor_readings").document(READING_ID).delete()
+                scores_ref = db.collection(TARGET_COLLECTION)\
+                    .where(filter=FieldFilter("session_id", "==", SESSION_ID))\
+                    .stream()
+                for doc in scores_ref:
+                    db.collection(TARGET_COLLECTION).document(doc.id).delete()
+            except:
+                pass
+        print("------------------------------------------------")
+        print("✨ Test Complete.")
 
 if __name__ == "__main__":
     run_real_test()
