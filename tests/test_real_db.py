@@ -33,14 +33,14 @@ def run_real_test():
     try:
         # 2. SETUP: Create Dummy Data
         print(f"📝 Creating Test Session: {SESSION_ID}")
-        db.collection("sleep_sessions").document(SESSION_ID).set({
+        db.("sleep_sessions").document(SESSION_ID).set({
             "status": "recording",  # <--- Triggers the query
             "started_at": datetime.now(timezone.utc),
             "user_id": "test_bot"
         })
 
         print(f"📝 Creating Test Reading: {READING_ID}")
-        db.collection("sensor_readings").document(READING_ID).set({
+        db.("sensor_readings").document(READING_ID).set({
             "session_id": SESSION_ID,
             "temperature": 25.5,
             "humidity": 60.0,
@@ -72,7 +72,7 @@ def run_real_test():
             print(f"❌ FAIL: Sensor Reading is_processed is {val}")
 
         # Check B: Score should exist
-        scores_ref = db.collection("ml_scores").where("session_id", "==", SESSION_ID).stream()
+        scores_ref = db.collection("interval_reports").where("session_id", "==", SESSION_ID).stream()
         scores = list(scores_ref)
         
         if len(scores) > 0:
@@ -85,22 +85,22 @@ def run_real_test():
     except Exception as e:
         print(f"❌ ERROR: Test crashed: {e}")
 
-    finally:
-        # 5. TEARDOWN: Clean up the mess
-        print("------------------------------------------------")
-        print("🧹 Cleaning up test data...")
-        if db:
-            try:
-                db.collection("sleep_sessions").document(SESSION_ID).delete()
-                db.collection("sensor_readings").document(READING_ID).delete()
+    # finally:
+    #     # 5. TEARDOWN: Clean up the mess
+    #     print("------------------------------------------------")
+    #     print("🧹 Cleaning up test data...")
+    #     if db:
+    #         try:
+    #             db.("sleep_sessions").document(SESSION_ID).delete()
+    #             db.("sensor_readings").document(READING_ID).delete()
                 
-                scores_ref = db.collection("ml_scores").where("session_id", "==", SESSION_ID).stream()
-                for doc in scores_ref:
-                    db.collection("ml_scores").document(doc.id).delete()
+    #             scores_ref = db.("interval_reports").where("session_id", "==", SESSION_ID).stream()
+    #             for doc in scores_ref:
+    #                 db.("interval_reports").document(doc.id).delete()
                     
-                print("✅ Cleanup complete. No trace left behind.")
-            except Exception as e:
-                print(f"⚠️ Cleanup failed: {e}")
+    #             print("✅ Cleanup complete. No trace left behind.")
+    #         except Exception as e:
+    #             print(f"⚠️ Cleanup failed: {e}")
 
 if __name__ == "__main__":
     run_real_test()

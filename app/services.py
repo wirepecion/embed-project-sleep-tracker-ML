@@ -1,45 +1,33 @@
 from datetime import datetime, timezone
 import logging
-from typing import Any, List, Dict
-
-# FIX 1: Import the MODULE, not the variable. 
-# This guarantees we always see the "live" database connection.
 import app.firebase_client as fb_client
 from app.model_loader import predict_batch
 
 logger = logging.getLogger("SleepService")
 
-# Constants
+# --- CONFIGURATION MATCHING YOUR SCREENSHOTS ---
 COLLECTION_SESSIONS = "sleep_sessions"
 COLLECTION_READINGS = "sensor_readings"
-COLLECTION_SCORES = "ml_scores"
+COLLECTION_SCORES = "interval_reports"
+
+# Your Schema Keys
+KEY_SESSION_STATUS = "type"      # You use 'type'
+VAL_SESSION_ACTIVE = "START"     # You use 'START'
+KEY_PROCESSED = "is_processed"
 
 def get_db():
-    """Helper to ensure we always get the live DB object."""
     return fb_client.db
 
 def process_active_sessions():
-    """
-    1. Query ONLY active sessions (saves DB reads).
-    2. For each active session, find unprocessed readings.
-    3. Predict and save.
-    """
     db = get_db()
-    
-    # Runtime check: If DB is still None, try to initialize it JIT (Just-In-Time)
     if db is None:
-        logger.warning("Database was None in service. Attempting reconnect...")
         db = fb_client.init_firebase()
-
-    if db is None:
-        logger.error("Database still not connected. Skipping process cycle.")
-        return
+    if db is None: return
 
     try:
-        # Note: The 'UserWarning' about positional arguments is harmless noise from the library.
-        # It works fine, but standard syntax is changing in future versions.
+        # 1. Query for sessions where type == "START"
         active_sessions_ref = db.collection(COLLECTION_SESSIONS)\
-            .where("status", "==", "recording")\
+            .where(KEY_SESSION_STATUS, "==", VAL_SESSION_ACTIVE)\
             .stream()
 
         for session in active_sessions_ref:
@@ -53,10 +41,11 @@ def process_single_session(session_id: str):
     if db is None: return
 
     try:
-        # STEP 2: Find readings without the 'is_processed' flag
+        # 2. Query readings linked to this session that are NOT processed
+        # CRITICAL: This requires the 'is_processed' field to exist (Run migration script!)
         readings_ref = db.collection(COLLECTION_READINGS)\
             .where("session_id", "==", session_id)\
-            .where("is_processed", "==", False)\
+            .where(KEY_PROCESSED, "==", False)\
             .limit(50) 
         
         docs = list(readings_ref.stream())
@@ -67,15 +56,16 @@ def process_single_session(session_id: str):
         features_batch = []
         doc_ids = []
         
-        # STEP 3: Prepare Data
         for doc in docs:
             data = doc.to_dict()
             try:
+                # 3. Exact field mapping from your screenshots
+                # Note: We cast to float to be safe
                 feats = [
-                    float(data.get("temperature", 0)),
-                    float(data.get("humidity", 0)),
-                    float(data.get("light", 0)),
-                    float(data.get("sound_level", 0))
+                    float(data.get("temperature", 0.0)),
+                    float(data.get("humidity", 0.0)),
+                    float(data.get("light", 0.0)),
+                    float(data.get("sound_level", 0.0))
                 ]
                 features_batch.append(feats)
                 doc_ids.append(doc.id)
@@ -85,10 +75,10 @@ def process_single_session(session_id: str):
         if not features_batch:
             return
 
-        # STEP 4: Batch Predict
+        # 4. Predict
         scores = predict_batch(features_batch)
         
-        # STEP 5: Write results
+        # 5. Save & Mark Processed
         batch = db.batch()
         
         for i, doc_id in enumerate(doc_ids):
@@ -103,11 +93,12 @@ def process_single_session(session_id: str):
             }
             batch.set(score_ref, score_data)
             
+            # Mark the reading as processed so we don't loop forever
             reading_ref = db.collection(COLLECTION_READINGS).document(doc_id)
-            batch.update(reading_ref, {"is_processed": True})
+            batch.update(reading_ref, {KEY_PROCESSED: True})
 
         batch.commit()
-        logger.info(f"Processed {len(docs)} readings for session {session_id}")
+        logger.info(f"✅ Processed {len(docs)} readings for session {session_id}")
 
     except Exception as e:
         logger.error(f"Processing failed for session {session_id}: {e}")
