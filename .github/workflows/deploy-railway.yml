@@ -1,93 +1,37 @@
-name: CI → Deploy to Railway
+name: Deploy to Railway
 
 on:
   push:
     branches:
-      - main   # change to your deploy branch
+      - main
 
 permissions:
   contents: read
-  id-token: write   # not required by railway CLI but OK to keep
-  # secrets are read-only for the workflow
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      # optional defaults you can override with secrets
-      RAILWAY_ENVIRONMENT: ${{ secrets.RAILWAY_ENVIRONMENT }}
-      RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up Node (needed for Railway CLI)
+      - name: Install Node (Railway CLI needs node)
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: 18
 
-      - name: Setup Python (for lint/test optionally)
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
 
-      - name: (Optional) Install dependencies for tests
+      - name: Set FIREBASE_CREDENTIALS_JSON in Railway
         run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt ; fi
-          # run unit tests here if you have them
-          # pytest -q
-
-      - name: Install Railway CLI (via npx)
-        run: |
-          npm --no-gpu i -g @railway/cli
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN || '' }}
-
-      - name: Configure Railway variables (optional)
-        id: set-vars
-        if: ${{ secrets.FIREBASE_CREDENTIALS_JSON != '' }}
-        run: |
-          # Use the Railway CLI to set project environment variables.
-          # This writes the FIREBASE_CREDENTIALS_JSON into the Railway project environment.
-          #
-          # If RAILWAY_PROJECT_ID is not provided, CLI will attempt to infer project from repository link.
-          #
-          # We run this step but do not fail the job if it errors (railway CLI sometimes requires interactive linking).
-          set -e
-          echo "Setting FIREBASE_CREDENTIALS_JSON in Railway project..."
-          # Use the CLI to set the variable. If RAILWAY_PROJECT_ID is provided, pass --project <id>.
-          if [ -n "${RAILWAY_PROJECT_ID}" ]; then
-            npx @railway/cli variables set FIREBASE_CREDENTIALS_JSON "${{ secrets.FIREBASE_CREDENTIALS_JSON }}" --project ${RAILWAY_PROJECT_ID} --environment ${RAILWAY_ENVIRONMENT} || true
-          else
-            npx @railway/cli variables set FIREBASE_CREDENTIALS_JSON "${{ secrets.FIREBASE_CREDENTIALS_JSON }}" --environment ${RAILWAY_ENVIRONMENT} || true
-          fi
+          npx railway variables set FIREBASE_CREDENTIALS_JSON "${{ secrets.FIREBASE_CREDENTIALS_JSON }}" --project ${{ secrets.RAILWAY_PROJECT_ID }} --environment ${{ secrets.RAILWAY_ENVIRONMENT }}
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
-          RAILWAY_ENVIRONMENT: ${{ secrets.RAILWAY_ENVIRONMENT }}
 
-      - name: Deploy to Railway (railway up)
-        id: railway_deploy
+      - name: Deploy with Railway
         run: |
-          echo "Deploying with Railway CLI..."
-          # npx @railway/cli up will build and deploy your project.
-          # --detached returns immediately after pushing/deploying (non-blocking)
-          # --project and --environment are optional.
-          CMD="npx @railway/cli up --non-interactive"
-          if [ -n "${RAILWAY_PROJECT_ID}" ]; then
-            CMD="$CMD --project ${RAILWAY_PROJECT_ID}"
-          fi
-          if [ -n "${RAILWAY_ENVIRONMENT}" ]; then
-            CMD="$CMD --environment ${RAILWAY_ENVIRONMENT}"
-          fi
-          echo "Running: $CMD"
-          $CMD
+          npx railway up --non-interactive --project ${{ secrets.RAILWAY_PROJECT_ID }} --environment ${{ secrets.RAILWAY_ENVIRONMENT }}
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
-          RAILWAY_ENVIRONMENT: ${{ secrets.RAILWAY_ENVIRONMENT }}
-
-      - name: Done
-        run: echo "Railway deploy step completed."
