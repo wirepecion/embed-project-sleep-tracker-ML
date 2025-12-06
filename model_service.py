@@ -1,16 +1,15 @@
 # model_service.py
-import numpy as np
-import joblib
 import os
+import joblib
+import numpy as np
 
-MODEL_PATH = os.environ.get("MODEL_ARTIFACT_PATH", "models/residual_model.joblib")
+MODEL_ARTIFACT = os.environ.get("MODEL_ARTIFACT_PATH", "models/residual_model.joblib")
 
-# rule constants
 TEMP_IDEAL = 20.0
 HUM_IDEAL = 50.0
 NOISE_THRESHOLD = 30.0
 
-def light_penalty(lux: float) -> float:
+def light_penalty(lux):
     if lux is None:
         return 0.0
     if lux <= 1.0:
@@ -22,16 +21,15 @@ def light_penalty(lux: float) -> float:
     return base + extra
 
 def rule_score(temp, hum, noise_db, light):
-    temp_pen = 3.5 * abs((temp or TEMP_IDEAL) - TEMP_IDEAL)
-    hum_pen = 0.4 * abs((hum or HUM_IDEAL) - HUM_IDEAL)
-    noise_pen = 2.0 * max(0.0, (noise_db or NOISE_THRESHOLD) - NOISE_THRESHOLD)
-    light_pen = 1.5 * light_penalty(light or 0.0)
+    temp_pen = 3.5 * abs((temp if temp is not None else TEMP_IDEAL) - TEMP_IDEAL)
+    hum_pen = 0.4 * abs((hum if hum is not None else HUM_IDEAL) - HUM_IDEAL)
+    noise_pen = 2.0 * max(0.0, (noise_db if noise_db is not None else NOISE_THRESHOLD) - NOISE_THRESHOLD)
+    light_pen = 1.5 * light_penalty(light if light is not None else 0.0)
     score = 100.0 - (temp_pen + hum_pen + noise_pen + light_pen)
     return float(np.clip(score, 0.0, 100.0))
 
-# Model wrapper
 class ResidualModel:
-    def __init__(self, path=MODEL_PATH):
+    def __init__(self, path=MODEL_ARTIFACT):
         self.path = path
         self.model = None
         self.version = None
@@ -42,40 +40,40 @@ class ResidualModel:
             try:
                 self.model = joblib.load(self.path)
                 self.version = getattr(self.model, "version", os.path.basename(self.path))
-                print("Loaded model:", self.version)
+                print("Loaded residual model:", self.version)
             except Exception as e:
-                print("Failed to load model:", e)
+                print("Failed loading model:", e)
                 self.model = None
                 self.version = None
         else:
-            print("Model artifact not found at", self.path)
+            print("No residual model at", self.path)
             self.model = None
             self.version = None
 
-    def predict(self, feature_array):
+    def predict(self, X):
         if self.model is None:
-            raise RuntimeError("No model loaded")
-        return self.model.predict(feature_array)
+            raise RuntimeError("Residual model not loaded")
+        return self.model.predict(X)
 
-# create singleton
-res_model = ResidualModel()
+_res = ResidualModel()
 
 def hybrid_predict(temp, hum, noise_db, light):
     r = rule_score(temp, hum, noise_db, light)
     residual = 0.0
     model_version = None
     try:
-        if res_model.model is not None:
-            X = np.array([[temp or TEMP_IDEAL, hum or HUM_IDEAL, (light or 0.0), (noise_db or NOISE_THRESHOLD)]])
-            pred = res_model.predict(X)
+        if _res.model is not None:
+            X = np.array([[temp if temp is not None else TEMP_IDEAL,
+                           hum if hum is not None else HUM_IDEAL,
+                           light if light is not None else 0.0,
+                           noise_db if noise_db is not None else NOISE_THRESHOLD]])
+            pred = _res.predict(X)
             residual = float(pred[0])
-            model_version = res_model.version
+            model_version = _res.version
     except Exception as e:
-        print("Residual prediction failed:", e)
+        print("Residual predict failed:", e)
         residual = 0.0
         model_version = None
-
-    hybrid = float(np.clip(r + residual, 0.0, 100.0))
-    # simple confidence: lower if model missing
-    confidence = 0.7 if model_version else 0.4
-    return {"interval_score": hybrid, "rule_score": r, "residual": residual, "model_version": model_version, "confidence": confidence}
+    final = float(np.clip(r + residual, 0.0, 100.0))
+    confidence = 0.7 if model_version else 0.45
+    return {"interval_score": final, "rule_score": r, "residual": residual, "model_version": model_version, "confidence": confidence}
