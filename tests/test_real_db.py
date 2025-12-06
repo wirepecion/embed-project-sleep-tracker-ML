@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from google.cloud.firestore import FieldFilter
 
 # 1. CLEANUP: Suppress the specific Google warning if it persists
-warnings.filterwarnings("ignore")
+# warnings.filterwarnings("ignore")
 
 sys.path.append(os.getcwd())
 
@@ -82,17 +82,17 @@ def run_real_test():
 
     finally:
         # TEARDOWN
-        if db:
-            try:
-                db.collection("sleep_sessions").document(SESSION_ID).delete()
-                db.collection("sensor_readings").document(READING_ID).delete()
-                scores_ref = db.collection(TARGET_COLLECTION)\
-                    .where(filter=FieldFilter("session_id", "==", SESSION_ID))\
-                    .stream()
-                for doc in scores_ref:
-                    db.collection(TARGET_COLLECTION).document(doc.id).delete()
-            except:
-                pass
+        # if db:
+        #     try:
+        #         db.collection("sleep_sessions").document(SESSION_ID).delete()
+        #         db.collection("sensor_readings").document(READING_ID).delete()
+        #         scores_ref = db.collection(TARGET_COLLECTION)\
+        #             .where(filter=FieldFilter("session_id", "==", SESSION_ID))\
+        #             .stream()
+        #         for doc in scores_ref:
+        #             db.collection(TARGET_COLLECTION).document(doc.id).delete()
+        #     except:
+        #         pass
         print("------------------------------------------------")
         print("✨ Test Complete.")
 
