@@ -12,7 +12,7 @@ from app.firebase_client import init_firebase
 
 # --- CONFIGURATION ---
 SIMULATION_SPEED_SECONDS = 2  # Wait 2 real seconds between readings
-TOTAL_READINGS_TO_SEND = 2    # How many "5-minute" packets to send (5 packets = 25 virtual minutes)
+TOTAL_READINGS_TO_SEND = 1   # How many "5-minute" packets to send (5 packets = 25 virtual minutes)
 SESSION_ID = f"SIM_SESSION_{str(uuid.uuid4())[:6]}"
 
 def simulate_night_sleep():

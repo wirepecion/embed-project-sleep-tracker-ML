@@ -8,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from google.cloud.firestore import FieldFilter
+import resend
 
 # Local Imports
 import app.firebase_client as fb_client
@@ -33,9 +34,9 @@ BLYNK_AUTH_TOKEN = "y9gtpw7iauYC0CJSNe2JHwOjznVsrBTi"
 BLYNK_URL = "https://blynk.cloud/external/api/update?token={token}&V0={value}"
 
 # --- EMAIL CONFIG ---
-GMAIL_SENDER = os.getenv("GMAIL_SENDER") or "mailoo.cedt@gmail.com"
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD") or "qmlb hcgh nnaj kxoz"
-GMAIL_RECEIVER = os.getenv("GMAIL_RECEIVER") or "mailoo.cedt@gmail.com"
+# GMAIL_SENDER = os.getenv("GMAIL_SENDER") or "mailoo.cedt@gmail.com"
+# GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD") 
+# GMAIL_RECEIVER = os.getenv("GMAIL_RECEIVER") 
 
 def get_db():
     return fb_client.db
@@ -66,7 +67,67 @@ def set_diffuser_state(is_on: bool):
 # ---------------------------------------------------------
 # HELPER: EMAIL NOTIFICATION
 # ---------------------------------------------------------
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+GMAIL_RECEIVER = os.getenv("GMAIL_RECEIVER") # Keep this, it's where you want to receive it
+
 def send_summary_email(summary_data):
+    """
+    Sends an email using Resend (HTTP) to bypass Railway's SMTP block.
+    """
+    if not RESEND_API_KEY:
+        logger.warning("⚠️ RESEND_API_KEY missing. Skipping notification.")
+        return
+
+    try:
+        resend.api_key = RESEND_API_KEY
+        
+        score = summary_data.get("sleepQualityScore", 0)
+        duration_s = summary_data.get("totalSleepDuration", 0)
+        hours = duration_s // 3600
+        mins = (duration_s % 3600) // 60
+        
+        html_body = f"""
+        <html>
+          <body style="font-family: Arial, sans-serif; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+              <h2 style="color: #4CAF50; text-align: center;">Sleep Session Summary</h2>
+              
+              <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; text-align: center;">
+                <h1 style="font-size: 48px; margin: 0; color: #333;">{score}</h1>
+                <p style="margin: 0; color: #666;">Sleep Quality Score</p>
+              </div>
+
+              <table style="width: 100%; margin-top: 20px; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Duration:</strong></td>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{hours}h {mins}m</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Avg Temp:</strong></td>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{summary_data.get('averageTemperature', 0):.1f}°C</td>
+                </tr>
+              </table>
+              <p style="text-align: center; margin-top: 30px; font-size: 12px; color: #999;">
+                Session ID: {summary_data.get('session_id')}
+              </p>
+            </div>
+          </body>
+        </html>
+        """
+
+        # Send via HTTP API
+        params = {
+            "from": "onboarding@resend.dev",  # Use this testing sender provided by Resend
+            "to": [GMAIL_RECEIVER],           # Must be the email you signed up with (until you verify a domain)
+            "subject": f"🌙 Sleep Report: {score}% Quality",
+            "html": html_body,
+        }
+
+        email = resend.Emails.send(params)
+        logger.info(f"📧 Email sent via Resend! ID: {email.get('id')}")
+
+    except Exception as e:
+        logger.error(f"❌ Failed to send email via API: {e}")
     """
     Sends a formatted HTML email with the sleep session results.
     """
