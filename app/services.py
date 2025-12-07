@@ -106,6 +106,18 @@ def send_summary_email(summary_data):
                   <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Avg Temp:</strong></td>
                   <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{summary_data.get('averageTemperature', 0):.1f}°C</td>
                 </tr>
+                <tr>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Avg Humidity:</strong></td>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{summary_data.get('averageHumidity', 0):.1f}%</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Avg Light Exposure:</strong></td>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{summary_data.get('averageLightExposure', 0):.1f} lux</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Avg Sound Level:</strong></td>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{summary_data.get('averageSoundLevel', 0):.1f} dB</td>
+                </tr>
               </table>
               <p style="text-align: center; margin-top: 30px; font-size: 12px; color: #999;">
                 Session ID: {summary_data.get('session_id')}

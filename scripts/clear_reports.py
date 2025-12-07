@@ -8,7 +8,10 @@ sys.path.append(os.getcwd())
 from app.firebase_client import init_firebase
 
 # --- CONFIGURATION ---
-TARGET_COLLECTION = "interval_reports"
+TARGET_COLLECTION = "interval_records"
+# TARGET_COLLECTION = "sensor_readings"
+# TARGET_COLLECTION = "sleep_sessions"
+# TARGET_COLLECTION = "session_records"
 BATCH_SIZE = 400
 
 def clear_collection():
