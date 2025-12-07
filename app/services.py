@@ -3,6 +3,10 @@ import logging
 import numpy as np
 import requests  # <--- NEW IMPORT
 from google.cloud.firestore import FieldFilter
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import os  
 
 import app.firebase_client as fb_client
 from app.model_loader import predict_batch
@@ -22,7 +26,7 @@ VAL_SESSION_ENDED = "END"
 KEY_PROCESSED = "is_processed"
 
 # --- DIFFUSER CONFIG ---
-DIFFUSER_THRESHOLD_SCORE = 90.0  # If score < 50, Turn ON
+DIFFUSER_THRESHOLD_SCORE = 90.0  
 BLYNK_AUTH_TOKEN = "y9gtpw7iauYC0CJSNe2JHwOjznVsrBTi"
 BLYNK_URL = "https://blynk.cloud/external/api/update?token={token}&V0={value}"
 
@@ -49,30 +53,123 @@ def set_diffuser_state(is_on: bool):
 # ---------------------------------------------------------
 # 1. REAL-TIME INTERVAL PROCESSING
 # ---------------------------------------------------------
+# In services.py
+
 def process_active_sessions():
     db = get_db()
     if db is None: db = fb_client.init_firebase()
-    if db is None: return
 
-    # OPTIMIZATION: Ignore "Zombie" sessions older than 24 hours
-    yesterday = datetime.now(timezone.utc) - timedelta(hours=24)
+    # 1. Query for unprocessed readings directly
+    # We don't care which session they belong to yet
+    unprocessed_docs = db.collection(COLLECTION_READINGS)\
+        .where(filter=FieldFilter("is_processed", "==", False))\
+        .limit(50)\
+        .stream()
+
+    # Group them by session_id in memory to process batches efficiently
+    sessions_map = {}
+    doc_count = 0
+    
+    for doc in unprocessed_docs:
+        data = doc.to_dict()
+        sid = data.get("session_id")
+        if sid:
+            if sid not in sessions_map: sessions_map[sid] = []
+            sessions_map[sid].append(doc)
+            doc_count += 1
+
+    if doc_count == 0:
+        logger.info("No new readings to process.")
+        return # Cost: Only 1 read!
+
+    logger.info(f"Found {doc_count} readings across {len(sessions_map)} sessions.")
+
+    # 2. Process each session found
+    for session_id, docs in sessions_map.items():
+        # You can reuse your existing logic here, just pass the docs directly
+        # to avoid re-querying!
+        process_specific_readings(session_id, docs)
+
+# --- EMAIL CONFIG ---
+GMAIL_SENDER = os.getenv("GMAIL_SENDER")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+GMAIL_RECEIVER = os.getenv("GMAIL_RECEIVER")
+
+def send_summary_email(summary_data):
+    """
+    Sends a formatted HTML email with the sleep session results.
+    """
+    if not GMAIL_SENDER or not GMAIL_APP_PASSWORD:
+        logger.warning("⚠️ Email not configured. Skipping notification.")
+        return
 
     try:
-        active_sessions_ref = db.collection(COLLECTION_SESSIONS)\
-            .where(filter=FieldFilter(KEY_SESSION_STATUS, "==", VAL_SESSION_ACTIVE))\
-            .where(filter=FieldFilter("timestamp", ">", yesterday))\
-            .stream()
-
-        count = 0
-        for session in active_sessions_ref:
-            process_single_session_intervals(session.id)
-            count += 1
+        # 1. Setup Message
+        msg = MIMEMultipart()
+        msg['From'] = GMAIL_SENDER
+        msg['To'] = GMAIL_RECEIVER
         
-        if count > 0:
-            logger.info(f"Checked {count} active sessions.")
-            
+        # Subject: e.g. "Sleep Report: 92% Quality (8h 15m)"
+        score = summary_data.get("sleepQualityScore", 0)
+        duration_s = summary_data.get("totalSleepDuration", 0)
+        hours = duration_s // 3600
+        mins = (duration_s % 3600) // 60
+        
+        msg['Subject'] = f"🌙 Sleep Report: {score}% Quality ({hours}h {mins}m)"
+
+        # 2. HTML Body
+        html_body = f"""
+        <html>
+          <body style="font-family: Arial, sans-serif; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+              <h2 style="color: #4CAF50; text-align: center;">Sleep Session Summary</h2>
+              
+              <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; text-align: center;">
+                <h1 style="font-size: 48px; margin: 0; color: #333;">{score}</h1>
+                <p style="margin: 0; color: #666;">Sleep Quality Score</p>
+              </div>
+
+              <table style="width: 100%; margin-top: 20px; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Duration:</strong></td>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{hours}h {mins}m</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Avg Temp:</strong></td>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{summary_data.get('averageTemperature', 0):.1f}°C</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Avg Humidity:</strong></td>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{summary_data.get('averageHumidity', 0):.1f}%</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Avg Noise:</strong></td>
+                  <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{summary_data.get('averageSoundLevel', 0):.1f} dB</td>
+                </tr>
+              </table>
+              
+              <p style="text-align: center; margin-top: 30px; font-size: 12px; color: #999;">
+                Session ID: {summary_data.get('session_id')}
+              </p>
+            </div>
+          </body>
+        </html>
+        """
+        
+        msg.attach(MIMEText(html_body, 'html'))
+
+        # 3. Connect to Gmail SMTP
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()  # Secure connection
+        server.login(GMAIL_SENDER, GMAIL_APP_PASSWORD)
+        text = msg.as_string()
+        server.sendmail(GMAIL_SENDER, GMAIL_RECEIVER, text)
+        server.quit()
+        
+        logger.info(f"📧 Email sent to {GMAIL_RECEIVER}")
+
     except Exception as e:
-        logger.error(f"Error querying active sessions: {e}")
+        logger.error(f"❌ Failed to send email: {e}")
 
 def process_single_session_intervals(session_id: str):
     db = get_db()
@@ -252,3 +349,4 @@ def generate_session_summary(session_id: str, target_ref):
     
     target_ref.set(summary_data)
     logger.info(f"🎉 Summary written for {session_id}: Duration {duration_seconds}s")
+
