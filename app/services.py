@@ -110,7 +110,7 @@ def process_single_session_intervals(session_id: str):
         batch.set(score_ref, {
             "session_id": session_id,
             # "reading_id": doc_id,
-            "score": float(final_score),
+            "sleep_score": float(final_score),
             # "base_rule": float(rule_scores[i]),
             # "ai_residual": float(residuals[i]),
             "timestamp": datetime.now(timezone.utc)
