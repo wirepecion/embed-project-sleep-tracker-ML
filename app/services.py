@@ -34,9 +34,9 @@ BLYNK_AUTH_TOKEN = "y9gtpw7iauYC0CJSNe2JHwOjznVsrBTi"
 BLYNK_URL = "https://blynk.cloud/external/api/update?token={token}&V0={value}"
 
 # --- EMAIL CONFIG ---
-# GMAIL_SENDER = os.getenv("GMAIL_SENDER") or "mailoo.cedt@gmail.com"
-# GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD") 
-# GMAIL_RECEIVER = os.getenv("GMAIL_RECEIVER") 
+GMAIL_SENDER = os.getenv("GMAIL_SENDER") or "mailoo.cedt@gmail.com"
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD") 
+# GMAIL_RECEIVER = os.getenv("GMAIL_RECEIVER") or "mailoo.cedt@gmail.com"
 
 def get_db():
     return fb_client.db
@@ -68,7 +68,7 @@ def set_diffuser_state(is_on: bool):
 # HELPER: EMAIL NOTIFICATION
 # ---------------------------------------------------------
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
-GMAIL_RECEIVER = os.getenv("GMAIL_RECEIVER") # Keep this, it's where you want to receive it
+GMAIL_RECEIVER = os.getenv("GMAIL_RECEIVER") or 'mailoo.cedt@gmail.com' # Keep this, it's where you want to receive it
 
 def send_summary_email(summary_data):
     """
