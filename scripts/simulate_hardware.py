@@ -28,12 +28,13 @@ def simulate_night_sleep():
 
     # 2. START SESSION
     print(f"🟢 [1/3] Sending START Signal...")
-    db.collection("sleep_sessions").document(SESSION_ID).set({
+    start_payload = {
         "type": "START",
-        "timestamp": datetime.now(timezone.utc),
+        "timestamp": datetime.now(timezone.utc),  # <--- START TIME
         "user_id": "simulated_user_01",
         "device_id": "esp32_prototype_A"
-    })
+    }
+    db.collection("sleep_sessions").document(SESSION_ID).set(start_payload)
     print("   Session Active. The server should detect this within 30s.")
 
     # 3. SENSOR LOOP
@@ -77,10 +78,11 @@ def simulate_night_sleep():
 
     # 4. END SESSION
     print(f"🔴 [3/3] Sending END Signal...")
-    db.collection("sleep_sessions").document(SESSION_ID).update({
-        "type": "END",
-        "ended_at": datetime.now(timezone.utc)
-    })
+    end_payload = {
+    "type": "END",
+    "ended_at": datetime.now(timezone.utc)    # <--- END TIME
+    }
+    db.collection("sleep_sessions").document(SESSION_ID).update(end_payload)
     
     print("------------------------------------------------")
     print("✨ SIMULATION COMPLETE")

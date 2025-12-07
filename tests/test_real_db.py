@@ -19,7 +19,7 @@ from app.model_loader import load_model_into_memory
 TEST_ID = str(uuid.uuid4())[:8]
 SESSION_ID = f"INTEGRATION_TEST_SESSION_{TEST_ID}"
 READING_ID = f"INTEGRATION_TEST_READING_{TEST_ID}"
-TARGET_COLLECTION = "interval_reports" # <--- UPDATED to match your new code
+TARGET_COLLECTION = "interval_records" # <--- UPDATED to match your new code
 
 def run_real_test():
     print(f"🚀 STARTING TEST (ID: {TEST_ID})")

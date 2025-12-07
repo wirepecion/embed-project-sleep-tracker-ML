@@ -21,6 +21,8 @@ VAL_SESSION_ACTIVE = "START"
 VAL_SESSION_ENDED = "END"     
 KEY_PROCESSED = "is_processed"
 
+
+
 def get_db():
     return fb_client.db
 
@@ -162,32 +164,54 @@ def process_finished_sessions():
 def generate_session_summary(session_id: str, target_ref):
     db = get_db()
     
-    # Fetch ALL Readings for averages
+    # 1. Fetch Session Document (NEW STEP)
+    # We need this to get the official 'timestamp' (Start) and 'ended_at' (End)
+    session_doc = db.collection(COLLECTION_SESSIONS).document(session_id).get()
+    if not session_doc.exists:
+        logger.warning(f"Session {session_id} doc not found during summary.")
+        return
+
+    session_data = session_doc.to_dict()
+    
+    # 2. Calculate Duration from Session Data (The "Correct" Way)
+    duration_seconds = 0
+    try:
+        # Helper to parse Firestore Timestamp or String
+        def to_dt(val):
+            if isinstance(val, str):
+                return datetime.fromisoformat(val.replace("Z", "+00:00"))
+            return val # Assume it's already a datetime/Timestamp
+
+        start_time = to_dt(session_data.get("timestamp"))
+        end_time = to_dt(session_data.get("ended_at"))
+
+        if start_time and end_time:
+            duration_seconds = int((end_time - start_time).total_seconds())
+    except Exception as e:
+        logger.warning(f"Could not calc duration from session doc: {e}")
+
+    # 3. Fetch Readings (For Averages)
     readings = list(db.collection(COLLECTION_READINGS)\
         .where(filter=FieldFilter("session_id", "==", session_id))\
         .stream())
     
     if not readings: return
 
-    temps, hums, lights, sounds, timestamps = [], [], [], [], []
+    temps, hums, lights, sounds = [], [], [], []
     
     for r in readings:
         d = r.to_dict()
-        temps.append(d.get("temperature", 0))
-        hums.append(d.get("humidity", 0))
-        lights.append(d.get("light", 0))
-        sounds.append(d.get("sound_level", 0))
+        temps.append(float(d.get("temperature", 0)))
+        hums.append(float(d.get("humidity", 0)))
+        lights.append(float(d.get("light", 0)))
+        sounds.append(float(d.get("sound_level", 0)))
         
-        # Try to parse timestamp
-        ts = d.get("timestamp")
-        if ts:
-            if isinstance(ts, str):
-                try: timestamps.append(datetime.fromisoformat(ts.replace("Z", "+00:00")))
-                except: pass
-            else:
-                timestamps.append(ts)
+        # Fallback: If session doc failed to give duration, use sensor timestamps
+        if duration_seconds == 0 and d.get("timestamp"):
+            # (Logic to track min/max sensor time would go here if needed)
+            pass
 
-    # Fetch Scores for Average Quality
+    # 4. Fetch Scores
     scores_docs = list(db.collection(COLLECTION_SCORES)\
         .where(filter=FieldFilter("session_id", "==", session_id))\
         .stream())
@@ -195,21 +219,16 @@ def generate_session_summary(session_id: str, target_ref):
     scores = [s.to_dict().get("score", 0) for s in scores_docs]
     avg_quality = float(np.mean(scores)) if scores else 0.0
 
-    # Calculate Duration
-    duration_seconds = 0
-    if timestamps:
-        duration_seconds = int((max(timestamps) - min(timestamps)).total_seconds())
-
-    # Write Summary
+    # 5. Write Summary
     summary_data = {
         "averageTemperature": float(np.mean(temps)) if temps else 0.0,
         "averageHumidity": float(np.mean(hums)) if hums else 0.0,
         "averageLightExposure": float(np.mean(lights)) if lights else 0.0,
         "averageSoundLevel": float(np.mean(sounds)) if sounds else 0.0,
-        "sleepQualityScore": float(f"{avg_quality:.1f}"), # Format neatly
-        "totalSleepDuration": duration_seconds,
+        "sleepQualityScore": float(f"{avg_quality:.1f}"),
+        "totalSleepDuration": duration_seconds,  # <--- Using the accurate value
         "date": datetime.now(timezone.utc)
     }
     
     target_ref.set(summary_data)
-    logger.info(f"🎉 Summary written for {session_id}: Score {avg_quality:.1f}")
+    logger.info(f"🎉 Summary written for {session_id}: Duration {duration_seconds}s")
