@@ -13,7 +13,7 @@ logger = logging.getLogger("SleepService")
 # --- CONFIGURATION ---
 COLLECTION_SESSIONS = "sleep_sessions"
 COLLECTION_READINGS = "sensor_readings"
-COLLECTION_SCORES = "interval_reports"
+COLLECTION_SCORES = "interval_records"
 COLLECTION_SUMMARY = "session_records"
 
 KEY_SESSION_STATUS = "type"      

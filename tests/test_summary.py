@@ -28,7 +28,7 @@ def run_test():
         })
     # Add fake scores
     for i in range(3):
-        db.collection("interval_reports").add({
+        db.collection("interval_records").add({
             "session_id": SESSION_ID, "score": 90.0 + i
         })
 
