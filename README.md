@@ -1,5 +1,10 @@
 # FastAPI + Firebase + ML Model (Railway Deployment)
 
+Json -> b-64 txt
+```
+base64 serviceAccountKey.json > firebase.b64.txt
+```
+
 Steps:
 1. Save Firebase Service Account JSON in GitHub Secrets.
 2. Encode it in GitHub Actions:
