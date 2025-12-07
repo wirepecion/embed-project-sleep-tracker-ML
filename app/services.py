@@ -109,11 +109,11 @@ def process_single_session_intervals(session_id: str):
         score_ref = db.collection(COLLECTION_SCORES).document() 
         batch.set(score_ref, {
             "session_id": session_id,
-            "reading_id": doc_id,
+            # "reading_id": doc_id,
             "score": float(final_score),
-            "base_rule": float(rule_scores[i]),
-            "ai_residual": float(residuals[i]),
-            "created_at": datetime.now(timezone.utc)
+            # "base_rule": float(rule_scores[i]),
+            # "ai_residual": float(residuals[i]),
+            "timestamp": datetime.now(timezone.utc)
         })
         
         # Mark Processed
@@ -133,13 +133,10 @@ def process_finished_sessions():
     db = get_db()
     if db is None: return
 
-    # OPTIMIZATION: Only look at sessions that ended in the last 20 minutes.
-    # We check every 5 mins, so this gives us 4 chances to catch it.
+    # Lookback window (20 mins is fine)
     lookback_window = datetime.now(timezone.utc) - timedelta(minutes=20)
 
     try:
-        # Find sessions that ended recently
-        # Note: Requires Composite Index (type ASC + timestamp DESC)
         ended_sessions = db.collection(COLLECTION_SESSIONS)\
             .where(filter=FieldFilter(KEY_SESSION_STATUS, "==", VAL_SESSION_ENDED))\
             .where(filter=FieldFilter("timestamp", ">", lookback_window))\
@@ -152,15 +149,22 @@ def process_finished_sessions():
                 if summary_ref.get().exists:
                     continue 
 
+                logger.info(f"∑ Processing Finished Session: {session.id}")
+                
+                # --- CRITICAL FIX: FLUSH PENDING READINGS ---
+                # Before summarizing, run the AI one last time to catch any 
+                # readings that arrived right before the session ended.
+                process_single_session_intervals(session.id)
+                # --------------------------------------------
+
+                # Now generate the summary (which will now include the scores we just calculated)
                 generate_session_summary(session.id, summary_ref)
                 
             except Exception as e:
                 logger.error(f"Failed to summarize session {session.id}: {e}")
 
     except Exception as e:
-        # Note: If you see "Index required", click the link in the logs!
         logger.error(f"Error scanning finished sessions: {e}")
-
 def generate_session_summary(session_id: str, target_ref):
     db = get_db()
     

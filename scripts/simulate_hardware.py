@@ -12,7 +12,7 @@ from app.firebase_client import init_firebase
 
 # --- CONFIGURATION ---
 SIMULATION_SPEED_SECONDS = 2  # Wait 2 real seconds between readings
-TOTAL_READINGS_TO_SEND = 5    # How many "5-minute" packets to send (5 packets = 25 virtual minutes)
+TOTAL_READINGS_TO_SEND = 2    # How many "5-minute" packets to send (5 packets = 25 virtual minutes)
 SESSION_ID = f"SIM_SESSION_{str(uuid.uuid4())[:6]}"
 
 def simulate_night_sleep():
@@ -31,8 +31,8 @@ def simulate_night_sleep():
     start_payload = {
         "type": "START",
         "timestamp": datetime.now(timezone.utc),  # <--- START TIME
-        "user_id": "simulated_user_01",
-        "device_id": "esp32_prototype_A"
+        # "user_id": "simulated_user_01",
+        # "device_id": "esp32_prototype_A"
     }
     db.collection("sleep_sessions").document(SESSION_ID).set(start_payload)
     print("   Session Active. The server should detect this within 30s.")
@@ -44,7 +44,7 @@ def simulate_night_sleep():
     current_temp = 26.5
     current_hum = 60.0
     current_noise = 35.0
-    current_light = 0.0 # Dark room
+    current_light = 30.0 # Dark room
 
     # Virtual clock starts now
     virtual_time = datetime.now(timezone.utc)
