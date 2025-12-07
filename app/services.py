@@ -22,7 +22,7 @@ VAL_SESSION_ENDED = "END"
 KEY_PROCESSED = "is_processed"
 
 # --- DIFFUSER CONFIG ---
-DIFFUSER_THRESHOLD_SCORE = 50.0  # If score < 50, Turn ON
+DIFFUSER_THRESHOLD_SCORE = 90.0  # If score < 50, Turn ON
 BLYNK_AUTH_TOKEN = "y9gtpw7iauYC0CJSNe2JHwOjznVsrBTi"
 BLYNK_URL = "https://blynk.cloud/external/api/update?token={token}&V0={value}"
 

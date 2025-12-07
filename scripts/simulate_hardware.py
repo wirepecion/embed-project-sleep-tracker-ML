@@ -44,7 +44,7 @@ def simulate_night_sleep():
     current_temp = 26.5
     current_hum = 60.0
     current_noise = 35.0
-    current_light = 30.0 # Dark room
+    current_light = 130.0 # Dark room
 
     # Virtual clock starts now
     virtual_time = datetime.now(timezone.utc)
