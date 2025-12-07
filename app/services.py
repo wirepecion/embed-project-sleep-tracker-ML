@@ -1,6 +1,7 @@
 import os
 import smtplib
 import logging
+from grpc import server
 import requests
 import numpy as np
 from datetime import datetime, timezone, timedelta
@@ -32,9 +33,9 @@ BLYNK_AUTH_TOKEN = "y9gtpw7iauYC0CJSNe2JHwOjznVsrBTi"
 BLYNK_URL = "https://blynk.cloud/external/api/update?token={token}&V0={value}"
 
 # --- EMAIL CONFIG ---
-GMAIL_SENDER = os.getenv("GMAIL_SENDER")
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
-GMAIL_RECEIVER = os.getenv("GMAIL_RECEIVER")
+GMAIL_SENDER = os.getenv("GMAIL_SENDER") or "mailoo.cedt@gmail.com"
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD") or "qmlb hcgh nnaj kxoz"
+GMAIL_RECEIVER = os.getenv("GMAIL_RECEIVER") or "mailoo.cedt@gmail.com"
 
 def get_db():
     return fb_client.db
@@ -125,8 +126,7 @@ def send_summary_email(summary_data):
         
         msg.attach(MIMEText(html_body, 'html'))
 
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
         server.login(GMAIL_SENDER, GMAIL_APP_PASSWORD)
         text = msg.as_string()
         server.sendmail(GMAIL_SENDER, GMAIL_RECEIVER, text)
@@ -335,3 +335,4 @@ def generate_session_summary(session_id: str, target_ref):
     
     # 5. Send Notification
     send_summary_email(summary_data)
+    # logger.info(f"📩 Summary email sent for {session_id}")
