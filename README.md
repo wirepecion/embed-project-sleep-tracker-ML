@@ -29,7 +29,7 @@ Unlike traditional "Black Box" AI models, this system uses a **Hybrid Neuro-Symb
 ## 🏗️ Architecture
 
 The system follows an **Event-Driven Micro-Batching** pattern to handle asynchronous IoT data efficiently.
-![Alt text for the image](images/flow.png)
+![Alt text for the image](Flow.png)
 
 ### 🧠 The "Hybrid" Logic (Why it works)
 
