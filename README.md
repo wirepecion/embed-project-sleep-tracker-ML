@@ -29,22 +29,7 @@ Unlike traditional "Black Box" AI models, this system uses a **Hybrid Neuro-Symb
 ## 🏗️ Architecture
 
 The system follows an **Event-Driven Micro-Batching** pattern to handle asynchronous IoT data efficiently.
-
-```mermaid
-graph TD
-    A[ESP32 IoT Node] -->|Writes Data (5 min)| B(Firebase Firestore)
-    C[Railway Backend] -->|Polls Active Sessions| B
-    B -->|New Data found| C
-    C -->|1. Compute Physics Rule| D[Rule Engine]
-    C -->|2. Predict Residual Error| E[Random Forest Model]
-    D & E -->|3. Hybrid Score = Rule + Model| F[Final Score]
-    F -->|Write Score| B
-    F -->|Score < 50%?| G{Trigger IoT?}
-    G -->|Yes| H[Call Blynk API -> Diffuser ON]
-    I[User Wakes Up] -->|End Session| B
-    B -->|Session END Detected| C
-    C -->|Generate Summary| J[Email Report (Resend API)]
-````
+![Alt text for the image](images/flow.png)
 
 ### 🧠 The "Hybrid" Logic (Why it works)
 
